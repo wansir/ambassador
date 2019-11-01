@@ -91,15 +91,27 @@ func (a *aggregator) setKubernetesResources(p *supervisor.Process, event k8sEven
 }
 
 func (a *aggregator) generateSnapshot(p *supervisor.Process) (string, error) {
-	k8sResources := make(map[string][]k8s.Resource)
+	k8sResources := make(map[string]map[string][]k8s.Resource)
 
 	// p.Logf("generating snapshot %q" , a.kubernetesResources)
 
 	for watchId, submap := range a.kubernetesResources {
-		for _, v := range submap {
-			k8sResources[watchId] = append(k8sResources[watchId], v...)
+		for k, v := range submap {
+			// p.Logf("watchId %q k %q v %q", watchId, k, v)
+
+			submapByWatchId, ok := k8sResources[k]
+
+			if !ok {
+				submapByWatchId = make(map[string][]k8s.Resource)
+				k8sResources[k] = submapByWatchId
+			}
+
+			submapByWatchId[watchId] = append(submapByWatchId[watchId], v...)
+
+			// p.Logf("sBWI[%q] now %q", watchId, submapByWatchId[watchId])
 		}
 	}
+	
 	s := watt.Snapshot{
 		Consul:     watt.ConsulSnapshot{Endpoints: a.consulEndpoints},
 		Kubernetes: k8sResources,

@@ -22,7 +22,7 @@ from kat.utils import ShellCommand
 
 KubeResource = Dict[str, Any]
 KubeList = List[KubeResource]
-WattDict = Dict[str, KubeList]
+WattDict = Dict[str, Dict[str, KubeList]]
 
 class LabelSpec:
     def __init__(self, serialization: str) -> None:
@@ -210,7 +210,9 @@ class Wattify:
                 m = w.match(obj)
 
                 if m:
-                    watt_k8s.setdefault(m.kind, []).append(obj)
+                    watt_for_kind: Dict[str, KubeList] = watt_k8s.setdefault(m.kind, {})
+                    watt_for_watch_id: KubeList = watt_for_kind.setdefault(m.watch_id, [])
+                    watt_for_watch_id.append(obj)
 
         return watt_k8s
 

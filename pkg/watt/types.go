@@ -26,5 +26,5 @@ func (s *ConsulSnapshot) DeepCopy() (*ConsulSnapshot, error) {
 
 type Snapshot struct {
 	Consul     ConsulSnapshot            `json:",omitempty"`
-	Kubernetes map[string][]k8s.Resource `json:",omitempty"`
+	Kubernetes map[string]map[string][]k8s.Resource `json:",omitempty"`
 }

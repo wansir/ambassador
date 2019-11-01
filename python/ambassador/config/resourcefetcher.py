@@ -190,31 +190,25 @@ class ResourceFetcher:
 
             watt_k8s = watt_dict.get('Kubernetes', {})
 
-            # Split types out of watchIds...
-            ids_for_type: Dict[str, List[str]] = {}
-
-            for watch_id in watt_k8s.keys():
-                found_type = watch_id.split("|", 1)[0]
-
-                ids_for_type.setdefault(found_type, []).append(watch_id)
-
-            self.logger.info(f"found types {', '.join(sorted(ids_for_type.keys()))}")
-
             # Handle normal Kube objects...
             for key in [ 'service', 'endpoints', 'secret', 'ingresses' ]:
-                for watch_id in ids_for_type.get(key) or []:
+                objects_by_type = watt_k8s.get(key) or {}
+
+                for watch_id, objects in objects_by_type.items():
                     self.logger.info(f"K8s raw {key}: looking at {watch_id}")
 
-                    for obj in watt_k8s.get(watch_id) or []:
+                    for obj in objects or []:
                         # self.logger.debug(f"Handling Kubernetes {key}...")
                         self.handle_k8s(obj)
 
             # ...then handle Ambassador CRDs.
             for key in CRDTypes:
-                for watch_id in ids_for_type.get(key) or []:
+                objects_by_type = watt_k8s.get(key) or {}
+
+                for watch_id, objects in objects_by_type.items():
                     self.logger.info(f"K8s CRD {key}: looking at {watch_id}")
 
-                    for obj in watt_k8s.get(watch_id) or []:
+                    for obj in objects or []:
                         # self.logger.debug(f"Handling CRD {key}...")
                         self.handle_k8s_crd(obj)
 
