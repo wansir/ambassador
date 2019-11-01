@@ -125,4 +125,4 @@ class HostFactory:
                     host.referenced_by(config)
                     host.sourced_by(config)
 
-                    ir.save_resource(host)
+                    ir.save_host(host)
