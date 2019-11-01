@@ -29,9 +29,9 @@ func (m *KubernetesWatchMaker) MakeKubernetesWatch(spec KubernetesWatchSpec) (*s
 			watchFunc := func(watchId, ns, kind string) func(watcher *k8s.Watcher) {
 				return func(watcher *k8s.Watcher) {
 					resources := watcher.List(kind)
-					p.Logf("found %d %q in namespace %q", len(resources), kind, fmtNamespace(ns))
+					p.Logf("found %d %q in namespace %q for watchId %q", len(resources), kind, fmtNamespace(ns), watchId)
 					m.notify <- k8sEvent{watchId: watchId, kind: kind, resources: resources}
-					p.Logf("sent %q to receivers", kind)
+					p.Logf("sent %q to receivers", watchId)
 				}
 			}
 
@@ -122,20 +122,24 @@ func fmtNamespace(ns string) string {
 
 func (b *kubebootstrap) Work(p *supervisor.Process) error {
 	for _, kind := range b.kinds {
-		p.Logf("adding kubernetes watch for %q in namespace %q", kind, fmtNamespace(kubernetesNamespace))
+		watchId := fmt.Sprintf("%s|bootstrap", kind)
 
-		watcherFunc := func(ns, kind string) func(watcher *k8s.Watcher) {
+		p.Logf("bootstrapping kubernetes watch for %q in namespace %q (watchId %q)",
+		       kind, fmtNamespace(kubernetesNamespace), watchId)
+
+		watcherFunc := func(watchId, ns, kind string) func(watcher *k8s.Watcher) {
 			return func(watcher *k8s.Watcher) {
 				resources := watcher.List(kind)
-				p.Logf("found %d %q in namespace %q", len(resources), kind, fmtNamespace(ns))
+				p.Logf("found %d %q in namespace %q for watchId %q", len(resources), kind, fmtNamespace(ns), watchId)
 				for _, n := range b.notify {
-					n <- k8sEvent{kind: kind, resources: resources}
+					n <- k8sEvent{watchId: watchId, kind: kind, resources: resources}
 				}
-				p.Logf("sent %q to %d receivers", kind, len(b.notify))
+				p.Logf("sent %q to %d receivers", watchId, len(b.notify))
 			}
 		}
 
-		err := b.kubeAPIWatcher.SelectiveWatch(b.namespace, kind, b.fieldSelector, b.labelSelector, watcherFunc(b.namespace, kind))
+		err := b.kubeAPIWatcher.SelectiveWatch(b.namespace, kind, b.fieldSelector, b.labelSelector, 
+			                               watcherFunc(watchId, b.namespace, kind))
 
 		if err != nil {
 			return err

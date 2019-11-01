@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"encoding/json"
 	"os/exec"
 	"strings"
@@ -63,10 +64,10 @@ func (a *aggregator) Work(p *supervisor.Process) error {
 	for {
 		select {
 		case event := <-a.KubernetesEvents:
-			a.setKubernetesResources(event)
+			a.setKubernetesResources(p, event)
 			a.maybeNotify(p)
 		case event := <-a.ConsulEvents:
-			a.updateConsulResources(event)
+			a.updateConsulResources(p, event)
 			a.maybeNotify(p)
 		case <-p.Shutdown():
 			return nil
@@ -74,12 +75,12 @@ func (a *aggregator) Work(p *supervisor.Process) error {
 	}
 }
 
-func (a *aggregator) updateConsulResources(event consulEvent) {
+func (a *aggregator) updateConsulResources(p *supervisor.Process, event consulEvent) {
 	a.ids[event.WatchId] = true
 	a.consulEndpoints[event.Endpoints.Service] = event.Endpoints
 }
 
-func (a *aggregator) setKubernetesResources(event k8sEvent) {
+func (a *aggregator) setKubernetesResources(p *supervisor.Process, event k8sEvent) {
 	a.ids[event.watchId] = true
 	submap, ok := a.kubernetesResources[event.watchId]
 	if !ok {
@@ -89,11 +90,14 @@ func (a *aggregator) setKubernetesResources(event k8sEvent) {
 	submap[event.kind] = event.resources
 }
 
-func (a *aggregator) generateSnapshot() (string, error) {
+func (a *aggregator) generateSnapshot(p *supervisor.Process) (string, error) {
 	k8sResources := make(map[string][]k8s.Resource)
-	for _, submap := range a.kubernetesResources {
-		for k, v := range submap {
-			k8sResources[k] = append(k8sResources[k], v...)
+
+	// p.Logf("generating snapshot %q" , a.kubernetesResources)
+
+	for watchId, submap := range a.kubernetesResources {
+		for _, v := range submap {
+			k8sResources[watchId] = append(k8sResources[watchId], v...)
 		}
 	}
 	s := watt.Snapshot{
@@ -110,13 +114,18 @@ func (a *aggregator) generateSnapshot() (string, error) {
 }
 
 func (a *aggregator) isKubernetesBootstrapped(p *supervisor.Process) bool {
-	submap, sok := a.kubernetesResources[""]
-	if !sok {
-		return false
-	}
 	for _, k := range a.requiredKinds {
+		watchId := fmt.Sprintf("%s|bootstrap", k)
+
+		submap, sok := a.kubernetesResources[watchId]
+		if !sok {
+			// p.Logf("missing %q", watchId)
+			return false
+		}
+
 		_, ok := submap[k]
 		if !ok {
+			// p.Logf("missing %q in %q", watchId, k)
 			return false
 		}
 	}
@@ -186,7 +195,7 @@ func (a *aggregator) notify(p *supervisor.Process) {
 	}
 
 	if a.bootstrapped {
-		snapshot, err := a.generateSnapshot()
+		snapshot, err := a.generateSnapshot(p)
 		if err != nil {
 			p.Logf("generate snapshot failed %v", err)
 			return
@@ -197,7 +206,7 @@ func (a *aggregator) notify(p *supervisor.Process) {
 }
 
 func (a *aggregator) getWatches(p *supervisor.Process) WatchSet {
-	snapshot, err := a.generateSnapshot()
+	snapshot, err := a.generateSnapshot(p)
 	if err != nil {
 		p.Logf("generate snapshot failed %v", err)
 		return WatchSet{}
