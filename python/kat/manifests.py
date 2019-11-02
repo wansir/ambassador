@@ -234,16 +234,32 @@ metadata:
   name: hosts.getambassador.io
 spec:
   group: getambassador.io
-  version: v1
-  versions:
-  - name: v1
-    served: true
-    storage: true
-  scope: Namespaced
   names:
     plural: hosts
     singular: host
     kind: Host
+  scope: Namespaced
+  additionalPrinterColumns:
+  - name: Hostname
+    type: string
+    JSONPath: .spec.hostname
+  - name: State
+    type: string
+    JSONPath: .status.state
+  - name: Phase Completed
+    type: string
+    JSONPath: .status.phaseCompleted
+  - name: Phase Pending
+    type: string
+    JSONPath: .status.phasePending
+  - name: Age
+    type: date
+    JSONPath: .metadata.creationTimestamp
+  version: v2
+  versions:
+  - name: v2
+    served: true
+    storage: true
 ---
 apiVersion: apiextensions.k8s.io/v1beta1
 kind: CustomResourceDefinition
