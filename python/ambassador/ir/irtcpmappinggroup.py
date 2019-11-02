@@ -11,6 +11,7 @@ from .irbasemapping import IRBaseMapping
 
 if TYPE_CHECKING:
     from .ir import IR
+    from .irlistener import IRListenerSet
 
 
 ########
@@ -132,7 +133,7 @@ class IRTCPMappingGroup (IRBaseMappingGroup):
         # ...and return it. Done.
         return stored
 
-    def finalize(self, ir: 'IR', aconf: Config) -> List[IRCluster]:
+    def finalize(self, ir: 'IR', aconf: Config, lset: 'IRListenerSet') -> List[IRCluster]:
         """
         Finalize a MappingGroup based on the attributes of its Mappings. Core elements get lifted into
         the Group so we can more easily build Envoy routes; host-redirect and shadow get handled, etc.
