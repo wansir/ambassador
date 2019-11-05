@@ -74,5 +74,6 @@ class MappingFactory:
         # OK. We've created whatever IRMappings we need. Time to create the clusters
         # they need.
 
-        for group in ir.groups.values():
-            group.finalize(ir, aconf)
+        for lset in ir.listener_sets:
+            for group in lset.groups.values():
+                group.finalize(ir, aconf, lset)

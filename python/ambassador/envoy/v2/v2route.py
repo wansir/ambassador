@@ -23,6 +23,7 @@ from .v2ratelimitaction import V2RateLimitAction
 
 if TYPE_CHECKING:
     from . import V2Config
+    from ...ir.irlistener import IRListenerSet
 
 
 def regex_matcher(config: 'V2Config', regex: str, key="regex", safe_key=None) -> Dict[str, Any]:
@@ -223,10 +224,8 @@ class V2Route(dict):
         self['route'] = route
 
     @classmethod
-    def generate(cls, config: 'V2Config') -> None:
-        config.routes = []
-
-        for irgroup in config.ir.ordered_groups():
+    def generate(cls, config: 'V2Config', lset: 'IRListenerSet') -> None:
+        for irgroup in lset.ordered_groups():
             if not isinstance(irgroup, IRHTTPMappingGroup):
                 # We only want HTTP mapping groups here.
                 continue

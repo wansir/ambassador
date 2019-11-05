@@ -49,9 +49,9 @@ class V2Config (EnvoyConfig):
         V2Admin.generate(self)
         V2Tracing.generate(self)
 
+        self.routes = []
         self.sni_routes = []
         V2RateLimit.generate(self)
-        V2Route.generate(self)
         V2Listener.generate(self)
         V2Cluster.generate(self)
         V2StaticResources.generate(self)

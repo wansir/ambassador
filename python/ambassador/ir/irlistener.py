@@ -1,7 +1,9 @@
-from typing import Any, Dict, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Dict, Iterable, List, Optional, Tuple, TYPE_CHECKING
 from typing import cast as typecast
 
 from ..config import Config
+from .irbasemapping import IRBaseMapping
+from .irbasemappinggroup import IRBaseMappingGroup
 from .irhost import IRHost
 from .irresource import IRResource
 from .irtlscontext import IRTLSContext
@@ -59,8 +61,9 @@ class IRListenerSet:
         self.ir = ir
         self.name = name
         self.host = host
-        self.resources: List[IRResource] = []
+        self.contexts: List[IRTLSContext] = []
         self.listeners: List[IRListener] = []
+        self.groups: Dict[str, IRBaseMappingGroup] = {}
 
         self.ir.logger.info(f"ListenerSet {self.name}: init, host {self.host.name if self.host else '-none-'}")
 
@@ -77,21 +80,46 @@ class IRListenerSet:
         self.ir.logger.info(f"ListenerSet {self.name}: no match for {resource}")
         return False
 
-    def consider(self, resource: IRResource) -> bool:
-        self.ir.logger.debug(f"ListenerSet {self.name}: consider {resource}")
+    def consider_context(self, ctx: IRTLSContext) -> bool:
+        self.ir.logger.debug(f"ListenerSet {self.name}: consider_context {ctx}")
 
-        if self.match(resource):
-            self.ir.logger.debug(f"ListenerSet {self.name}: add {resource}")
-            self.resources.append(resource)
+        if self.match(ctx):
+            self.ir.logger.debug(f"ListenerSet {self.name}: add {ctx}")
+            self.contexts.append(ctx)
             return True
 
         return False
 
+    def consider_mapping(self, aconf: Config, mapping: IRBaseMapping) -> bool:
+        self.ir.logger.debug(f"ListenerSet {self.name}: consider_mapping {mapping}")
+
+        if self.match(mapping):
+            if mapping.group_id not in self.groups:
+                group_name = "GROUP: %s" % mapping.name
+                group_class = mapping.group_class()
+                group = group_class(ir=self.ir, aconf=aconf,
+                                    location=mapping.location,
+                                    name=group_name,
+                                    mapping=mapping)
+
+                self.groups[group.group_id] = group
+            else:
+                group = self.groups[mapping.group_id]
+                group.add_mapping(aconf, mapping)
+
+            return True
+
+        return False
+
+    def ordered_groups(self) -> Iterable[IRBaseMappingGroup]:
+        return reversed(sorted(self.groups.values(), key=lambda x: x['group_weight']))
+
     def as_dict(self) -> Dict[str, Any]:
         return {
             'name': self.name,
-            'host': self.host.as_dict(),
-            'resources': [ r.as_dict() for r in self.resources ],
+            'host': [ self.host.as_dict() if self.host else None ],
+            'contexts': [ ctx.as_dict() for ctx in self.contexts ],
+            'groups': [ group.as_dict() for group in self.ordered_groups() ],
             'listeners': [ l.as_dict() for l in self.listeners ]
         }
 
@@ -117,12 +145,12 @@ class ListenerFactory:
                 # Add this context to all the host-based listener_sets that make
                 # sense...
                 for lset in listener_sets[:-1]:
-                    if lset.consider(ctx):
+                    if lset.consider_context(ctx):
                         found = True
 
                 # ...and then to the fallback IFF nothing else matched.
                 if not found:
-                    listener_sets[-1].consider(ctx)
+                    listener_sets[-1].consider_context(ctx)
 
         # OK. Now let's start figuring out how to put each listener_set together.
         for lset in listener_sets:
@@ -161,7 +189,7 @@ class ListenerFactory:
             # supplied an Ambassador module that doesn't define the service port...
             override_location = bool(amod.location == '--internal--')
 
-            for ctx in lset.resources:
+            for ctx in lset.contexts:
                 if ctx.kind != 'IRTLSContext':
                     continue
 

@@ -65,7 +65,6 @@ class IR:
     edge_stack_allowed: bool
     file_checker: Callable[[str], bool]
     filters: List[IRFilter]
-    groups: Dict[str, IRBaseMappingGroup]
     grpc_services: Dict[str, IRCluster]
     hosts: Dict[str, IRHost]
     listener_sets: List[IRListenerSet]
@@ -130,7 +129,6 @@ class IR:
         self.breakers = {}
         self.clusters = {}
         self.filters = []
-        self.groups = {}
         self.grpc_services = {}
         self.hosts = {}
         # self.k8s_status_updates is handled below.
@@ -469,24 +467,38 @@ class IR:
     #     primary_listener = 'ir.listener'
     #     return self.add_to_listener(primary_listener, **kwargs)
 
-    def add_mapping(self, aconf: Config, mapping: IRBaseMapping) -> Optional[IRBaseMappingGroup]:
+    # def add_mapping(self, aconf: Config, mapping: IRBaseMapping) -> Optional[IRBaseMappingGroup]:
+    #     if mapping.is_active():
+    #         if mapping.group_id not in self.groups:
+    #             group_name = "GROUP: %s" % mapping.name
+    #             group_class = mapping.group_class()
+    #             group = group_class(ir=self, aconf=aconf,
+    #                                 location=mapping.location,
+    #                                 name=group_name,
+    #                                 mapping=mapping)
+    #
+    #             self.groups[group.group_id] = group
+    #         else:
+    #             group = self.groups[mapping.group_id]
+    #             group.add_mapping(aconf, mapping)
+    #
+    #         return group
+    #     else:
+    #         return None
+
+    def add_mapping(self, aconf: Config, mapping: IRBaseMapping) -> None:
         if mapping.is_active():
-            if mapping.group_id not in self.groups:
-                group_name = "GROUP: %s" % mapping.name
-                group_class = mapping.group_class()
-                group = group_class(ir=self, aconf=aconf,
-                                    location=mapping.location,
-                                    name=group_name,
-                                    mapping=mapping)
+            found = False
 
-                self.groups[group.group_id] = group
-            else:
-                group = self.groups[mapping.group_id]
-                group.add_mapping(aconf, mapping)
+            # Add this mapping to all the host-based listener_sets that make
+            # sense...
+            for lset in self.listener_sets[:-1]:
+                if lset.consider_mapping(aconf, mapping):
+                    found = True
 
-            return group
-        else:
-            return None
+            # ...and then to the fallback IFF nothing else matched.
+            if not found:
+                self.listener_sets[-1].consider_mapping(aconf, mapping)
 
     def add_mapping_to_config(self, mapping: ACResource, mapping_identifier: str):
         if 'mappings' not in self.aconf.config:
@@ -597,8 +609,8 @@ class IR:
                             self.logger.debug(f"Updating {ci_name}'s status to: {status_update}")
                             self.k8s_status_updates[ci_name] = status_update
 
-    def ordered_groups(self) -> Iterable[IRBaseMappingGroup]:
-        return reversed(sorted(self.groups.values(), key=lambda x: x['group_weight']))
+    # def ordered_groups(self) -> Iterable[IRBaseMappingGroup]:
+    #     return reversed(sorted(self.groups.values(), key=lambda x: x['group_weight']))
 
     def has_cluster(self, name: str) -> bool:
         return name in self.clusters
@@ -648,7 +660,6 @@ class IR:
             'hosts': [ host.as_dict() for host in self.hosts.values() ],
             'listener_sets': [ lset.as_dict() for lset in self.listener_sets ],
             'filters': [ filt.as_dict() for filt in self.filters ],
-            'groups': [ group.as_dict() for group in self.ordered_groups() ],
             'tls_contexts': [ context.as_dict() for context in self.tls_contexts.values() ],
             'services': self.services,
             'k8s_status_updates': self.k8s_status_updates

@@ -20,7 +20,7 @@ import json
 # from copy import deepcopy
 
 from multi import multi
-from ...ir.irlistener import IRListener
+from ...ir.irlistener import IRListener, IRListenerSet
 from ...ir.irauth import IRAuth
 from ...ir.irbuffer import IRBuffer
 from ...ir.irgzip import IRGzip
@@ -33,7 +33,7 @@ from ...ir.irtcpmappinggroup import IRTCPMappingGroup
 from ambassador.utils import ParsedService as Service
 
 from .v2tls import V2TLSContext
-# from .v2route import V2Route
+from .v2route import V2Route
 
 if TYPE_CHECKING:
     from . import V2Config
@@ -463,7 +463,7 @@ class V2TCPListener(dict):
 
 
 class V2Listener(dict):
-    def __init__(self, config: 'V2Config', listener: IRListener) -> None:
+    def __init__(self, config: 'V2Config', lset: IRListenerSet, listener: IRListener) -> None:
         super().__init__()
 
         # Default some things to the way they should be for the redirect listener
@@ -590,13 +590,13 @@ class V2Listener(dict):
                 self.require_tls = None
 
             # Save upgrade configs.
-            for group in config.ir.ordered_groups():
+            for group in lset.ordered_groups():
                 if group.get('use_websocket'):
                     self.upgrade_configs = [{ 'upgrade_type': 'websocket' }]
                     break
 
             # Let self.handle_sni do the heavy lifting for SNI.
-            self.handle_sni(config)
+            self.handle_sni(config, lset)
 
         # We need to add a cleartext listener if any of the following are true:
         #
@@ -732,7 +732,7 @@ class V2Listener(dict):
         if self.listener_filters:
             self['listener_filters'] = self.listener_filters
 
-    def handle_sni(self, config: 'V2Config') -> None:
+    def handle_sni(self, config: 'V2Config', lset: IRListenerSet) -> None:
         """
         Manage filter chains, etc., for SNI.
 
@@ -746,7 +746,7 @@ class V2Listener(dict):
         # of course.
         envoy_contexts: List[Tuple[str, Optional[List[str]], V2TLSContext]] = []
 
-        for tls_context in config.ir.get_tls_contexts():
+        for tls_context in lset.contexts:
             if tls_context.get('hosts', None):
                 config.ir.logger.debug("V2Listener: SNI taking termination context '%s'" % tls_context.name)
                 config.ir.logger.debug(tls_context.as_json())
@@ -836,29 +836,34 @@ class V2Listener(dict):
     def generate(cls, config: 'V2Config') -> None:
         config.listeners = []
 
-        for irlistener in config.ir.listeners:
-            listener = config.save_element('listener', irlistener, V2Listener(config, irlistener))
-            config.listeners.append(listener)
+        for lset in config.ir.listener_sets:
+            # First we need to generate routes...
+            V2Route.generate(config, lset)
 
-        # We need listeners for the TCPMappingGroups too.
-        tcplisteners: Dict[str, V2TCPListener] = {}
-
-        for irgroup in config.ir.ordered_groups():
-            if not isinstance(irgroup, IRTCPMappingGroup):
-                continue
-
-            # OK, good to go. Do we already have a TCP listener binding where this one does?
-            group_key = irgroup.bind_to()
-            listener = tcplisteners.get(group_key, None)
-
-            config.ir.logger.info("V2TCPListener: group at %s found %s listener" %
-                                  (group_key, "extant" if listener else "no"))
-
-            if not listener:
-                # Nope. Make a new one and save it.
-                listener = config.save_element('listener', irgroup, V2TCPListener(config, irgroup))
+            # ...then listeners.
+            for irlistener in lset.listeners:
+                listener = config.save_element('listener', irlistener, V2Listener(config, lset, irlistener))
                 config.listeners.append(listener)
-                tcplisteners[group_key] = listener
 
-            # Whether we just created this listener or not, add this irgroup to it.
-            listener.add_group(config, irgroup)
+            # We need listeners for the TCPMappingGroups too.
+            tcplisteners: Dict[str, V2TCPListener] = {}
+
+            for irgroup in lset.ordered_groups():
+                if not isinstance(irgroup, IRTCPMappingGroup):
+                    continue
+
+                # OK, good to go. Do we already have a TCP listener binding where this one does?
+                group_key = irgroup.bind_to()
+                listener = tcplisteners.get(group_key, None)
+
+                config.ir.logger.info("V2TCPListener: group at %s found %s listener" %
+                                      (group_key, "extant" if listener else "no"))
+
+                if not listener:
+                    # Nope. Make a new one and save it.
+                    listener = config.save_element('listener', irgroup, V2TCPListener(config, irgroup))
+                    config.listeners.append(listener)
+                    tcplisteners[group_key] = listener
+
+                # Whether we just created this listener or not, add this irgroup to it.
+                listener.add_group(config, irgroup)
