@@ -39,7 +39,7 @@ from .irhost import IRHost, HostFactory
 from .irmappingfactory import MappingFactory
 from .irratelimit import IRRateLimit
 from .irtls import TLSModuleFactory, IRAmbassadorTLS
-from .irlistener import ListenerFactory, IRListener
+from .irlistener import ListenerFactory, IRListener, IRListenerSet
 from .irlogservice import IRLogService, IRLogServiceFactory
 from .irtracing import IRTracing
 from .irtlscontext import IRTLSContext, TLSContextFactory
@@ -68,7 +68,7 @@ class IR:
     groups: Dict[str, IRBaseMappingGroup]
     grpc_services: Dict[str, IRCluster]
     hosts: Dict[str, IRHost]
-    listeners: List[IRListener]
+    listener_sets: List[IRListenerSet]
     log_services: Dict[str, IRLogService]
     ratelimit: Optional[IRRateLimit]
     redirect_cleartext_from: Optional[int]
@@ -134,7 +134,7 @@ class IR:
         self.grpc_services = {}
         self.hosts = {}
         # self.k8s_status_updates is handled below.
-        self.listeners = []
+        self.listener_sets = []
         self.log_services = {}
         self.outliers = {}
         self.ratelimit = None
@@ -246,8 +246,10 @@ class IR:
 
         # We would handle other modules here -- but guess what? There aren't any.
         # At this point ambassador, tls, and the deprecated auth module are all there
-        # are, and they're handled above. So. At this point go sort out all the Mappings
+        # are, and they're handled above. So. At this point go sort out listeners...
         ListenerFactory.load_all(self, aconf)
+
+        # ...and then mappings, since they need to be assigned to listener sets.
         MappingFactory.load_all(self, aconf)
 
         self.walk_saved_resources(aconf, 'add_mappings')
@@ -453,19 +455,19 @@ class IR:
         for res in self.saved_resources.values():
             getattr(res, method_name)(self, aconf)
 
-    def add_listener(self, listener: IRListener) -> None:
-        self.listeners.append(listener)
+    def add_listener_set(self, listener_set: IRListenerSet) -> None:
+        self.listener_sets.append(listener_set)
 
-    def add_to_listener(self, listener_name: str, **kwargs) -> bool:
-        for listener in self.listeners:
-            if listener.get('name') == listener_name:
-                listener.update(kwargs)
-                return True
-        return False
-
-    def add_to_primary_listener(self, **kwargs) -> bool:
-        primary_listener = 'ir.listener'
-        return self.add_to_listener(primary_listener, **kwargs)
+    # def add_to_listener(self, listener_name: str, **kwargs) -> bool:
+    #     for listener in self.listeners:
+    #         if listener.get('name') == listener_name:
+    #             listener.update(kwargs)
+    #             return True
+    #     return False
+    #
+    # def add_to_primary_listener(self, **kwargs) -> bool:
+    #     primary_listener = 'ir.listener'
+    #     return self.add_to_listener(primary_listener, **kwargs)
 
     def add_mapping(self, aconf: Config, mapping: IRBaseMapping) -> Optional[IRBaseMappingGroup]:
         if mapping.is_active():
@@ -644,7 +646,7 @@ class IR:
             'grpc_services': { svc_name: cluster.as_dict()
                                for svc_name, cluster in self.grpc_services.items() },
             'hosts': [ host.as_dict() for host in self.hosts.values() ],
-            'listeners': [ listener.as_dict() for listener in self.listeners ],
+            'listener_sets': [ lset.as_dict() for lset in self.listener_sets ],
             'filters': [ filt.as_dict() for filt in self.filters ],
             'groups': [ group.as_dict() for group in self.ordered_groups() ],
             'tls_contexts': [ context.as_dict() for context in self.tls_contexts.values() ],

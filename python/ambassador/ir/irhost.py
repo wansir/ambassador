@@ -1,4 +1,4 @@
-from typing import Optional, TYPE_CHECKING
+from typing import Dict, List, Optional, TYPE_CHECKING
 
 from ..utils import SavedSecret
 from ..config import Config
@@ -16,6 +16,8 @@ class IRHost(IRResource):
         'selector',
         'tlsSecret',
     }
+
+    label_selectors: List[str]
 
     def __init__(self, ir: 'IR', aconf: Config,
                  rkey: str,      # REQUIRED
@@ -39,6 +41,18 @@ class IRHost(IRResource):
 
     def setup(self, ir: 'IR', aconf: Config) -> bool:
         ir.logger.info(f"Host {self.name} setting up")
+
+        self.label_selectors = []
+        self.label_match_string: Optional[str] = None
+
+        sel = self.get('selector') or {}
+        self.match_labels = sel.get('matchLabels') or {}
+
+        if self.match_labels:
+            for k, v in self.match_labels.items():
+                self.label_selectors.append(f"{k}={v}")
+
+            self.label_match_string = ",".join(self.label_selectors)
 
         tls_ss: Optional[SavedSecret] = None
         pkey_ss: Optional[SavedSecret] = None
@@ -100,6 +114,21 @@ class IRHost(IRResource):
                         ir.logger.error(f"Host {self.name}: continuing with invalid private key secret {pkey_name}")
 
         return True
+
+    def matches_labels(self, labels: Dict[str, str]) -> bool:
+        if not self.match_labels:
+            return True
+
+        if not labels:
+            return False
+
+        return all([ labels.get(k) == v for k, v in self.match_labels.items() ])
+
+    def  matches(self, resource: IRResource) -> bool:
+        if not self.match_labels:
+            return True
+
+        return self.matches_labels(resource.metadata_labels)
 
     def resolve(self, ir: 'IR', secret_name: str) -> SavedSecret:
         # Try to use our namespace for secret resolution. If we somehow have no

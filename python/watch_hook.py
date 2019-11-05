@@ -167,17 +167,10 @@ logger.debug('label-selector: %s' % global_label_selector)
 
 # Walk hosts.
 for host in fake.get_hosts():
-    sel = host.get('selector') or {}
-    match_labels = sel.get('matchLabels') or {}
-
-    label_selector = None
-
-    if match_labels:
-        label_selector = ','.join([ f"{l}={v}" for l, v in match_labels.items() ])
-
-    for wanted_kind in [ 'service', 'secret' ]:
-        add_kube_watch(f"Host {host.name}", wanted_kind, host.namespace,
-                       label_selector=label_selector)
+    for label_selector in host.label_selectors:
+        for wanted_kind in [ 'service', 'secret', 'TLSContext', 'Mapping' ]:
+            add_kube_watch(f"Host {host.name}", wanted_kind, host.namespace,
+                           label_selector=host.label_match_string)
 
 for mname, mapping in mappings.items():
     res_name = mapping.get('resolver', None)
@@ -230,7 +223,7 @@ for mname, mapping in mappings.items():
                                label_selector=global_label_selector, field_selector=f"metadata.name={host}")
 
 for secret_key, secret_info in fake.secret_recorder.needed.items():
-    logger.debug(f'need secret {secret_info.name}.{secret_info.namespace}')
+    # logger.debug(f'need secret {secret_info.name}.{secret_info.namespace}')
 
     add_kube_watch(f"needed secret", "secret", secret_info.namespace, field_selector=f"metadata.name={secret_info.name}")
 
